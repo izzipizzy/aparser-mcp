@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "aparser": {
+      "source": "izzipizzy/aparser-mcp",
+      "sourceType": "github",
+      "skillPath": "skills/aparser/SKILL.md",
+      "computedHash": "c1ceea3802ce76f35b55cc4559dedf65be8f7f2957149fe3727c7ad58c9c689a"
+    }
+  }
+}

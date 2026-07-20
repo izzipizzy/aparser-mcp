@@ -1,0 +1,11 @@
+{
+  "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
+  "notGrouped": "bottom",
+  "groupings": [
+    {
+      "title": "A-Parser",
+      "description": "Drive A-Parser from an AI agent via the aparser MCP server — check a site's Google/Bing/Yandex positions, collect SERPs, suggests and keyword data, and run any A-Parser task. Bilingual docs (EN/RU), per-parser reference for all 136 parsers, and captcha/geo/device recipes.",
+      "skills": ["aparser"]
+    }
+  ]
+}

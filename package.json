@@ -1,0 +1,50 @@
+{
+  "name": "aparser-mcp",
+  "version": "0.1.2",
+  "description": "MCP server for the A-Parser HTTP API — drive parsing tasks (SERP, positions, suggests) from an AI agent.",
+  "type": "module",
+  "bin": {
+    "aparser-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "README.md",
+    "README.ru.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "start": "node dist/index.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "a-parser",
+    "aparser",
+    "scraper",
+    "serp",
+    "seo"
+  ],
+  "license": "MIT",
+  "author": "izzipizzy",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/izzipizzy/aparser-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/izzipizzy/aparser-mcp/issues"
+  },
+  "homepage": "https://github.com/izzipizzy/aparser-mcp#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}
