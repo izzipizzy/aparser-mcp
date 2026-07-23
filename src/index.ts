@@ -63,13 +63,88 @@ async function call(action: string, data?: Record<string, unknown>): Promise<any
   return body.data;
 }
 
+// --------------------------------------------------------------------------- //
+// Pre-flight validation — reject unknown parsers / override ids BEFORE posting //
+// (invalid options can error or destabilize A-Parser, so catch them here).     //
+// --------------------------------------------------------------------------- //
+// Defaults for this deployment (override via env). Config preset picks the thread
+// count; the proxy budget = sum of threads of all active tasks. "th17" (3 tasks × 17)
+// fits a ~50-thread proxy limit with max-active=3.
+const DEF_CONFIG_PRESET = (process.env.AP_CONFIG_PRESET ?? "th17").trim();
+const DEF_PROXYRETRIES = Number(process.env.AP_PROXYRETRIES ?? 40);
+
+const presetCache = new Map<string, Set<string>>();
+async function validOptionIds(parser: string): Promise<Set<string>> {
+  let ids = presetCache.get(parser);
+  if (!ids) {
+    const preset = await call("getParserPreset", { parser, preset: "default" });
+    ids = new Set(Object.keys(preset ?? {}));
+    presetCache.set(parser, ids);
+  }
+  return ids;
+}
+let parserList: Set<string> | null = null;
+async function knownParsers(): Promise<Set<string>> {
+  if (!parserList) {
+    const info = await call("info");
+    parserList = new Set<string>((info?.availableParsers ?? []) as string[]);
+  }
+  return parserList;
+}
+/** Throw a clear error if a parser name is unknown or any override id is invalid. */
+async function validateStack(parsers: any[]): Promise<void> {
+  if (!Array.isArray(parsers) || parsers.length === 0) {
+    throw new Error('`parsers` must be a non-empty stack, e.g. [["SE::Google","default"]].');
+  }
+  const known = await knownParsers();
+  for (const entry of parsers) {
+    if (!Array.isArray(entry) || entry.length < 1) {
+      throw new Error(`Invalid parsers entry ${JSON.stringify(entry)}. Expected ["Parser::Name","preset", ...overrides].`);
+    }
+    const name = String(entry[0]);
+    if (!known.has(name)) {
+      throw new Error(`Unknown parser "${name}". Not posted. Use list_parsers for valid names.`);
+    }
+    const valid = await validOptionIds(name);
+    const bad: string[] = [];
+    for (const o of entry.slice(2)) {
+      if (o && typeof o === "object" && (o as any).type === "override") {
+        const id = String((o as any).id ?? "");
+        const base = id.split(".")[0]; // allow linked-preset dotted ids, e.g. Util_ReCaptcha2_preset.key
+        if (id && !valid.has(id) && !valid.has(base)) bad.push(id);
+      }
+    }
+    if (bad.length) {
+      const sample = [...valid].sort().slice(0, 40).join(", ");
+      throw new Error(
+        `Invalid override id(s) for ${name}: ${bad.join(", ")}. NOT posted. ` +
+        `Valid option ids: ${sample}${valid.size > 40 ? ", …" : ""} ` +
+        `— full list via parser_info / the parsers/<Parser>.md doc.`,
+      );
+    }
+  }
+}
+async function validateOptions(parser: string, options: any[]): Promise<void> {
+  await validateStack([[String(parser), "default", ...(options ?? [])]]);
+}
+
+/** Inject the default `proxyretries` override when the parser supports it and the
+ * caller didn't set one. Keeps runs robust without the caller repeating it. */
+async function withRetryDefault(parser: string, overrides: any[]): Promise<any[]> {
+  const ov = overrides ?? [];
+  const valid = await validOptionIds(parser).catch(() => new Set<string>());
+  if (!valid.has("proxyretries")) return ov;
+  const has = ov.some((o) => o && typeof o === "object" && o.type === "override" && o.id === "proxyretries");
+  return has ? ov : [...ov, { type: "override", id: "proxyretries", value: DEF_PROXYRETRIES }];
+}
+
 /** Wrap any value as a text CallToolResult (objects/arrays as pretty JSON). */
 function result(data: unknown) {
   const text = typeof data === "string" ? data : JSON.stringify(data, null, 2);
   return { content: [{ type: "text" as const, text }] };
 }
 
-const server = new McpServer({ name: "aparser", version: "0.1.0" });
+const server = new McpServer({ name: "aparser", version: "0.1.3" });
 
 // --------------------------------------------------------------------------- //
 // Diagnostics
@@ -139,15 +214,17 @@ server.registerTool(
       query: z.string().describe("The query to parse (keyword, URL, etc.)."),
       parser: z.string().describe('Parser name, e.g. "SE::Google::Suggest".'),
       preset: z.string().default("default").describe("Saved parser preset name."),
-      config_preset: z.string().default("default").describe("Thread/config preset name."),
+      config_preset: z.string().default(DEF_CONFIG_PRESET).describe("Thread/config preset name; defaults to AP_CONFIG_PRESET or th17."),
       raw_results: z.boolean().default(true).describe("Structured results array vs one formatted string."),
       options: z.array(z.record(z.any())).optional().describe("Per-request parameter overrides."),
     },
   },
   async ({ query, parser, preset, config_preset, raw_results, options }) => {
+    const opts = await withRetryDefault(parser, options ?? []); // default proxyretries
+    await validateOptions(parser, opts); // pre-flight: parser + override ids
     const data: Record<string, unknown> = { query, parser, preset, configPreset: config_preset };
     if (raw_results) data.rawResults = 1;
-    if (options) data.options = options;
+    if (opts.length) data.options = opts;
     return result(await call("oneRequest", data));
   },
 );
@@ -171,22 +248,29 @@ server.registerTool(
       parsers: z.array(z.any()).describe('Parser stack, e.g. [["SE::Google","default"]].'),
       queries: z.array(z.string()).optional().describe("Inline queries (when queries_file is not given)."),
       queries_file: z.string().optional().describe("Server-side path to a queries file."),
-      config_preset: z.string().default("default"),
+      config_preset: z.string().default(DEF_CONFIG_PRESET).describe("Thread/config preset; defaults to AP_CONFIG_PRESET or th17."),
       query_format: z.string().default("$query").describe('How each input line becomes a query (default "$query").'),
       results_file_name: z.string().default("$datefile.format().txt"),
       results_format: z.string().optional().describe("Output template; omit to use the preset format."),
       results_prepend: z.string().default(""),
       results_append: z.string().default(""),
       unique_queries: z.boolean().default(false),
-      do_log: z.boolean().default(false),
+      do_log: z.boolean().default(true).describe("Write per-query logs to the A-Parser DB (view in UI). On by default."),
       priority: z.number().int().default(5),
     },
   },
   async (a) => {
+    // Inject default proxyretries into each stack entry that supports it (and lacks one).
+    const parsers = await Promise.all((a.parsers as any[]).map(async (entry) => {
+      if (!Array.isArray(entry) || entry.length < 1) return entry; // validateStack will reject
+      const [name, preset, ...ov] = entry;
+      return [name, preset ?? "default", ...(await withRetryDefault(String(name), ov))];
+    }));
+    await validateStack(parsers); // pre-flight: parser names + override ids
     const data: Record<string, unknown> = {
       preset: "default",
       configPreset: a.config_preset,
-      parsers: a.parsers,
+      parsers,
       queryFormat: [a.query_format],
       resultsSaveTo: "file",
       resultsFileName: a.results_file_name,
