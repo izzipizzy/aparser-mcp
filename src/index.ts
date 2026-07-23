@@ -67,10 +67,12 @@ async function call(action: string, data?: Record<string, unknown>): Promise<any
 // Pre-flight validation — reject unknown parsers / override ids BEFORE posting //
 // (invalid options can error or destabilize A-Parser, so catch them here).     //
 // --------------------------------------------------------------------------- //
-// Defaults for this deployment (override via env). Config preset picks the thread
-// count; the proxy budget = sum of threads of all active tasks. "th17" (3 tasks × 17)
-// fits a ~50-thread proxy limit with max-active=3.
-const DEF_CONFIG_PRESET = (process.env.AP_CONFIG_PRESET ?? "th17").trim();
+// Defaults for this deployment (override via env). Config preset picks the per-task
+// thread count. The server has "Динамический лимит потоков" enabled + "Общий лимит
+// потоков" = proxy limit (~50), so A-Parser caps the SUM of active threads itself and
+// distributes by task priority — no need to hand-split the budget. Default to the full
+// preset "50th" and let the global dynamic limit do the sharing.
+const DEF_CONFIG_PRESET = (process.env.AP_CONFIG_PRESET ?? "50th").trim();
 const DEF_PROXYRETRIES = Number(process.env.AP_PROXYRETRIES ?? 40);
 
 const presetCache = new Map<string, Set<string>>();
