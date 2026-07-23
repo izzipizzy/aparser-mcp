@@ -26,14 +26,11 @@ license: MIT
 капча (XEvil), desktop/mobile, батчи.
 
 ## Setup (один раз)
-MCP-сервер: пакет `aparser-mcp` (TypeScript, stdio, ставится через npx). Скил обращается
-**только к твоему собственному серверу A-Parser** (`AP_URL`); доступ читается из переменных
-окружения, нигде не хардкодится, не логируется и не отправляется третьим сторонам.
+MCP-сервер — пакет `aparser-mcp` (TypeScript, stdio, ставится через npx). Скил обращается
+**только к твоему собственному серверу A-Parser**; доступ читается из окружения, нигде не
+хардкодится, не логируется и не пересылается третьим сторонам. Задай в окружении `AP_URL`
+(адрес твоего A-Parser) и `AP_PASSWORD` (ключ API), затем зарегистрируй сервер:
 ```bash
-# положи адрес и ключ доступа своего A-Parser в окружение (не в скил):
-export AP_URL="http://YOUR_HOST:9091/API"
-export AP_PASSWORD="YOUR_A_PARSER_API_KEY"
-# зарегистрируй MCP, пробросив эти переменные:
 claude mcp add aparser --env AP_URL="$AP_URL" --env AP_PASSWORD="$AP_PASSWORD" -- npx -y aparser-mcp
 ```
 `ping` должен вернуть `pong`.
@@ -56,19 +53,11 @@ claude mcp add aparser --env AP_URL="$AP_URL" --env AP_PASSWORD="$AP_PASSWORD" -
 По сырому API этих дефолтов нет — задавай `configPreset`, `proxyretries`, `doLog:"db"` сам.
 
 ## Без MCP — сырой HTTP API (когда MCP тупит/недоступен)
-MCP — лишь тонкая обёртка над HTTP. Всё то же дёргается напрямую на твоём сервере: POST на
-`$AP_URL`, тело JSON `{"password":"$AP_PASSWORD","action":"<method>","data":{...}}` (ключ
-доступа берётся из окружения, см. Setup), ответ `{"success":1,"data":...}`. Полный список
-методов и шаблон `addTask` — в [api-reference.md](api-reference.md).
-```bash
-# ping (ключ доступа подставляется из окружения — в тексте его нет)
-curl -s "$AP_URL" -H 'Content-Type: application/json' \
-  -d "{\"password\":\"$AP_PASSWORD\",\"action\":\"ping\"}"
-
-# разовая проверка позиции (синхронно, лог в data.logs по умолчанию)
-curl -s "$AP_URL" -H 'Content-Type: application/json' \
-  -d "{\"password\":\"$AP_PASSWORD\",\"action\":\"oneRequest\",\"data\":{\"query\":\"example.com my keyword\",\"parser\":\"SE::Google::Position\",\"preset\":\"default\",\"rawResults\":1,\"options\":[{\"type\":\"override\",\"id\":\"gl\",\"value\":\"us\"}]}}"
-```
+MCP — лишь тонкая обёртка над HTTP: те же методы дёргаются POST-запросом на твой
+**собственный** сервер A-Parser (`AP_URL`), тело JSON `{"action":"<method>","data":{...}}`,
+ответ `{"success":1,"data":...}`. Ключ доступа берётся из окружения (`AP_PASSWORD`, см.
+Setup). **Готовые примеры запросов (ping/oneRequest), curl-шаблон и полный список методов
+с шаблоном `addTask` — в [api-reference.md](api-reference.md).**
 Батч: `addTask` → вернёт `taskUid`; опрашивай `getTaskState`; готово → `getTaskResultsFile`
 (одноразовый URL на скачивание). `addTask` требует ПОЛНЫЙ набор полей (`queryFormat` — массив,
 `doLog` — enum `no|memory|db`, `keepUnique:"No"`, `resultsUnique:"no"`, …) — бери шаблон из
